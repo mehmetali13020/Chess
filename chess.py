@@ -241,5 +241,4 @@ pygame.quit()
 
 
 # check
-# capturing
 # pawn shit
