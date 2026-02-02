@@ -71,8 +71,9 @@ def create_pieces():
             alive_pieces.append(Piece(color,(item_num,other_row[color]),pieces_order[item_num],img_var))
 
 def captures(capturing_piece,captured_piece):
-    pass
-
+    global alive_pieces
+    capturing_piece.loc = captured_piece.loc
+    alive_pieces.remove(captured_piece)
 
 def do_grid():
     grid = [[0 for i in range(board_len)]for j in range(board_len)]
@@ -89,6 +90,7 @@ def do_grid():
     return grid
 
 def move_pieces(current_piece,loc):
+    global alive_pieces
     x,y = loc
     current_piece.loc = (x,y)
     if current_piece.kind == "pawn":
@@ -203,11 +205,16 @@ while running:
             loc_coord = ((x//tile_size),(y//tile_size))
             i,j = loc_coord
             selected_tile = grid[j][i]
-            if selected_piece and type(selected_tile) != Piece:
+            if selected_piece:
                 if (i,j) in ava_sqr:
-                    move_pieces(selected_piece,(i,j))
-                    next_turn()
-                    selected_piece = None
+                    if type(selected_tile) == Piece and selected_tile.color != whose_turn():
+                        captures(selected_piece,selected_tile)
+                        next_turn()
+                        selected_piece = None
+                    else:
+                        move_pieces(selected_piece,(i,j))
+                        next_turn()
+                        selected_piece = None
             elif selected_tile in space:
                 pass
             elif selected_tile.color == whose_turn():
