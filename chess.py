@@ -190,11 +190,12 @@ def display_board():
             
             pygame.draw.rect(window, color, (j*tile_size,i*tile_size,tile_size,tile_size))
 
-
+fps_count = pygame.time.Clock()
 running = True
 create_pieces()
 while running:
-    
+    fps_count.tick(30)
+
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -215,6 +216,10 @@ while running:
                         move_pieces(selected_piece,(i,j))
                         next_turn()
                         selected_piece = None
+                elif selected_tile in space or selected_tile.color != whose_turn():
+                    selected_piece = None
+                else:
+                    selected_piece = selected_tile
             elif selected_tile in space:
                 pass
             elif selected_tile.color == whose_turn():
