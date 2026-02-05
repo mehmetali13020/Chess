@@ -66,8 +66,6 @@ class Pawn(Piece):
 class KingEndanger(Exception):
     pass
 
-class Checkmated (Exception):
-    pass
 
 def create_pieces():
     global alive_pieces
@@ -99,44 +97,24 @@ def CheckMate():
     if len(tiles) == 0:
         running = False
 
-def KingSafe(color_to_check):
-    """Check if the given color's king is under attack by opponent pieces."""
-    # Find the king of the color being checked
-    king = None
+def KingSafe():
     for piece in alive_pieces:
-        if piece.color == color_to_check and piece.kind == "King":
-            king = piece
+        if piece.color == whose_turn() and piece.kind == "King":
+            king_x, king_y = piece.loc
             break
     
-    if not king:
-        return  # King not found (shouldn't happen)
-    
-    king_x, king_y = king.loc
-    
-    # Check all opponent pieces to see if they can attack the king
+    # Check if any opponent piece can attack the king
     for attacker in alive_pieces:
-        if attacker.color == color_to_check:  # Skip own color
+        if attacker.color == whose_turn():  # Skip own pieces
             continue
         
-        # Check if this opponent piece threatens the king
-        if attacker.slow:  # Knight, King, Pawn
-            ax, ay = attacker.loc
-            for dx, dy in attacker.move:
-                if attacker.kind == "pawn":
-                    # Pawns attack diagonally, and direction depends on color
-                    if attacker.color == "White":
-                        check_dirs = [(-1, -1), (1, -1)]  # White pawns attack upward-diagonally
-                    else:
-                        check_dirs = [(-1, 1), (1, 1)]  # Black pawns attack downward-diagonally
-                    for pdx, pdy in check_dirs:
-                        if ax + pdx == king_x and ay + pdy == king_y:
-                            raise KingEndanger
-                else:
-                    if ax + dx == king_x and ay + dy == king_y:
-                        raise KingEndanger
-        else:  # Sliding pieces (Rook, Bishop, Queen)
-            ax, ay = attacker.loc
-            for dx, dy in attacker.move:
+        ax, ay = attacker.loc
+        
+        for dx, dy in attacker.move:
+            if attacker.slow:  # One-step pieces
+                if ax + dx == king_x and ay + dy == king_y:
+                    raise KingEndanger
+            else:  # Sliding pieces
                 for i in range(1, 8):
                     tx = ax + (dx * i)
                     ty = ay + (dy * i)
@@ -147,11 +125,10 @@ def KingSafe(color_to_check):
                     if tx == king_x and ty == king_y:
                         raise KingEndanger
                     
-                    # Check if path is blocked
-                    target = grid[ty][tx]
-                    if target not in space:  # Hit another piece
+                    # Stop if blocked
+                    if grid[ty][tx] not in space:
                         break
-            
+                 
 def UpdateLoc(piece):
     for col in range(len(grid)):
         if piece in grid[col]:
@@ -303,7 +280,7 @@ while running:
                         try:
                             captures(selected_piece, selected_tile)
                             grid = do_grid()  # Update grid after capture
-                            KingSafe(whose_turn())  # Check if our king is safe
+                            KingSafe()  # Check if our king is safe
                         except KingEndanger:
                             # Revert capture
                             selected_piece.loc = original_loc
@@ -317,7 +294,7 @@ while running:
                         try:
                             move_pieces(selected_piece, (i, j))
                             grid = do_grid()  # Update grid after move
-                            KingSafe(whose_turn())  # Check if our king is safe
+                            KingSafe()  # Check if our king is safe
                         except KingEndanger:
                             # Revert move
                             selected_piece.loc = original_loc
