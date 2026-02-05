@@ -1,4 +1,5 @@
 import pygame
+import pyautogui
 from images import *
 pygame.init()
 
@@ -36,6 +37,7 @@ class Piece:
         self.loc = location
         self.kind = kind
         self.image = image
+        self.ava_sqr = []
         if kind == "Rook":
             self.move = str_move
             self.played = False
@@ -47,16 +49,25 @@ class Piece:
             self.move = str_move + dia_move
             self.slow = True
             self.played = False
-        elif kind == "pawn":
-            if self.color == "Black":
-                self.move = [(0,-1)]
-            else:
-                self.move = [(0,1)]
-            self.slow = True
-            self.first_move = True
         elif kind == "Knight":
             self.move = knight_move
             self.slow = True
+
+class Pawn(Piece):
+    def __init__(self, color, location, kind, image):
+        super().__init__(color, location, kind, image)
+        self.slow = True
+        self.first_move = True
+        if self.color == "Black":
+            self.move = [(0,-1)]
+        else:
+            self.move = [(0,1)]
+
+class KingEndanger(Exception):
+    pass
+
+class Checkmated (Exception):
+    pass
 
 def create_pieces():
     global alive_pieces
@@ -64,7 +75,7 @@ def create_pieces():
         for pawn_num in range(pawns):
             img_name = f"{color.lower()}_pawn_img"
             img_var = globals()[img_name]    
-            alive_pieces.append(Piece(color,(pawn_num,pawn_row[color]),"pawn",img_var))
+            alive_pieces.append(Pawn(color,(pawn_num,pawn_row[color]),"pawn",img_var))
         for item_num in range(len(pieces_order)):
             img_name = f"{color.lower()}_{pieces_order[item_num].lower()}_img"
             img_var = globals()[img_name]
@@ -72,8 +83,79 @@ def create_pieces():
 
 def captures(capturing_piece,captured_piece):
     global alive_pieces
-    capturing_piece.loc = captured_piece.loc
-    alive_pieces.remove(captured_piece)
+    global running
+    if captured_piece.kind != "King":
+        capturing_piece.loc = captured_piece.loc
+        alive_pieces.remove(captured_piece)
+    else:
+            running = False
+            
+def CheckMate():
+    global running
+    tiles = []
+    for item in alive_pieces:
+        if item.color == whose_turn():
+            tiles += item.ava_sqr
+    if len(tiles) == 0:
+        running = False
+
+def KingSafe(color_to_check):
+    """Check if the given color's king is under attack by opponent pieces."""
+    # Find the king of the color being checked
+    king = None
+    for piece in alive_pieces:
+        if piece.color == color_to_check and piece.kind == "King":
+            king = piece
+            break
+    
+    if not king:
+        return  # King not found (shouldn't happen)
+    
+    king_x, king_y = king.loc
+    
+    # Check all opponent pieces to see if they can attack the king
+    for attacker in alive_pieces:
+        if attacker.color == color_to_check:  # Skip own color
+            continue
+        
+        # Check if this opponent piece threatens the king
+        if attacker.slow:  # Knight, King, Pawn
+            ax, ay = attacker.loc
+            for dx, dy in attacker.move:
+                if attacker.kind == "pawn":
+                    # Pawns attack diagonally, and direction depends on color
+                    if attacker.color == "White":
+                        check_dirs = [(-1, -1), (1, -1)]  # White pawns attack upward-diagonally
+                    else:
+                        check_dirs = [(-1, 1), (1, 1)]  # Black pawns attack downward-diagonally
+                    for pdx, pdy in check_dirs:
+                        if ax + pdx == king_x and ay + pdy == king_y:
+                            raise KingEndanger
+                else:
+                    if ax + dx == king_x and ay + dy == king_y:
+                        raise KingEndanger
+        else:  # Sliding pieces (Rook, Bishop, Queen)
+            ax, ay = attacker.loc
+            for dx, dy in attacker.move:
+                for i in range(1, 8):
+                    tx = ax + (dx * i)
+                    ty = ay + (dy * i)
+                    
+                    if not (0 <= tx < 8 and 0 <= ty < 8):
+                        break
+                    
+                    if tx == king_x and ty == king_y:
+                        raise KingEndanger
+                    
+                    # Check if path is blocked
+                    target = grid[ty][tx]
+                    if target not in space:  # Hit another piece
+                        break
+            
+def UpdateLoc(piece):
+    for col in range(len(grid)):
+        if piece in grid[col]:
+            piece.loc = grid[col][grid[col].index(piece)].loc
 
 def do_grid():
     grid = [[0 for i in range(board_len)]for j in range(board_len)]
@@ -93,7 +175,7 @@ def move_pieces(current_piece,loc):
     global alive_pieces
     x,y = loc
     current_piece.loc = (x,y)
-    if current_piece.kind == "pawn":
+    if current_piece.kind == "pawn" and current_piece.first_move:
         current_piece.first_move = False
 
 def next_turn():
@@ -177,7 +259,8 @@ def show_movement(piece):
                         break
                 else:                    
                     break
-    
+        piece.ava_sqr = []
+        piece.ava_sqr += ava_sqr
     return ava_sqr
 def display_board():
     for i in range(board_len):
@@ -193,6 +276,7 @@ def display_board():
 fps_count = pygame.time.Clock()
 running = True
 create_pieces()
+
 while running:
     fps_count.tick(30)
 
@@ -206,27 +290,50 @@ while running:
             loc_coord = ((x//tile_size),(y//tile_size))
             i,j = loc_coord
             selected_tile = grid[j][i]
+
             if selected_piece:
                 if (i,j) in ava_sqr:
-                    if type(selected_tile) == Piece and selected_tile.color != whose_turn():
-                        captures(selected_piece,selected_tile)
-                        next_turn()
-                        selected_piece = None
+                    # Save original state before attempting move
+                    original_loc = selected_piece.loc
+                    original_captured = None
+                    
+                    if type(selected_tile) in [Piece,Pawn] and selected_tile.color != whose_turn():
+                        # Capture attempt
+                        original_captured = selected_tile
+                        try:
+                            captures(selected_piece, selected_tile)
+                            grid = do_grid()  # Update grid after capture
+                            KingSafe(whose_turn())  # Check if our king is safe
+                        except KingEndanger:
+                            # Revert capture
+                            selected_piece.loc = original_loc
+                            alive_pieces.append(original_captured)
+                            selected_piece = None
+                        else:    
+                            next_turn()
+                            selected_piece = None
                     else:
-                        move_pieces(selected_piece,(i,j))
-                        next_turn()
-                        selected_piece = None
-                elif selected_tile in space or selected_tile.color != whose_turn():
+                        # Normal move attempt
+                        try:
+                            move_pieces(selected_piece, (i, j))
+                            grid = do_grid()  # Update grid after move
+                            KingSafe(whose_turn())  # Check if our king is safe
+                        except KingEndanger:
+                            # Revert move
+                            selected_piece.loc = original_loc
+                            selected_piece = None
+                        else:
+                            next_turn()
+                            selected_piece = None
+                elif selected_tile in space or (type(selected_tile) in [Piece,Pawn] and selected_tile.color != whose_turn()):
                     selected_piece = None
                 else:
                     selected_piece = selected_tile
             elif selected_tile in space:
                 pass
-            elif selected_tile.color == whose_turn():
+            elif type(selected_tile) in [Piece,Pawn] and selected_tile.color == whose_turn():
                 selected_piece = selected_tile
                 ava_sqr = show_movement(selected_piece)
-
-
 
             
     grid = do_grid()
@@ -241,8 +348,10 @@ while running:
 
 
     pygame.display.update()
+else:
+    next_turn()
+    pyautogui.alert(f"{whose_turn()} won the game")
 pygame.quit()
-
 
 
 # check
